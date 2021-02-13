@@ -6,13 +6,14 @@ import TableContainer from '@material-ui/core/TableContainer';
 import TableHead from '@material-ui/core/TableHead';
 import TableRow from '@material-ui/core/TableRow';
 import Paper from '@material-ui/core/Paper';
-import {TextField, Fab} from "@material-ui/core";
+import {Checkbox, Fab, FormControlLabel, TextField} from "@material-ui/core";
 import AddIcon from '@material-ui/icons/Add';
-import {useState, Fragment} from "react";
+import {Fragment, useState} from "react";
 import Dialog from '@material-ui/core/Dialog';
 import DialogActions from '@material-ui/core/DialogActions';
 import DialogContent from '@material-ui/core/DialogContent';
 import Button from '@material-ui/core/Button';
+import FinancialTableRow from "./financial_table_row";
 
 const useStyles = makeStyles((theme) => ({
     table: {
@@ -35,27 +36,55 @@ function withZakat(monthlyBudget, years, balance = 0, paidZakatOverYears = 0) {
     }
 }
 
-function createData(goal, monthly_budget, in_years) {
-    let zakated = withZakat(monthly_budget, in_years);
-    return {goal, monthly_budget, in_years, "zakat": zakated.paidZakatOverYears, "total_budget": zakated.balance};
+function createData({
+                        hasRecurringExpenses = false,
+                        goal = "",
+                        monthly_budget = 0,
+                        in_years = 0,
+                        recurring_expenses = []
+                    }) {
+        let recurring_expenses_monthly_total = recurring_expenses.reduce((accumulator, recurring_expense) => {
+            let daily_cost = recurring_expense.cost / (recurring_expense.multiplier / recurring_expense.times);
+            return accumulator + (daily_cost * 30.436875);
+        }, 0);
+
+    let zakated = withZakat(monthly_budget - recurring_expenses_monthly_total, in_years);
+    return {
+        hasRecurringExpenses,
+        goal,
+        monthly_budget,
+        in_years,
+        "zakat": zakated.paidZakatOverYears,
+        "total_budget": zakated.balance,
+        recurring_expenses
+    };
 }
 
 export default function FinancialTable() {
     const classes = useStyles();
-    const [open, setOpen] = useState(false);
+    const [showAddDialog, setShowAddDialog] = useState(false);
+    const [rows, setRows] = useState([]);
 
     const handleClickOpen = () => {
-        setOpen(true);
+        setShowAddDialog(true);
     };
     const handleClose = () => {
-        setOpen(false);
+        setShowAddDialog(false);
     };
     const handleAdd = () => {
-        let goal = createData(document.getElementById("goal").value, 0, 0);
-        rows.push(goal);
+        let goal = document.getElementById("goal").value;
+        let hasRecurringExpenses = document.getElementById("hasRecurringExpenses").checked;
+        let row = createData({hasRecurringExpenses, goal, monthly_budget: 0, in_years: 0});
+        rows.push(row);
         handleClose();
     }
-    const [rows, setRows] = useState([]);
+    const onRowUpdate = (newValue, changedIndex, changedCell) => {
+        setRows(rows.map((row, index) => {
+            if (index !== changedIndex) return row;
+            row[changedCell] = (newValue || row[changedCell]);
+            return createData({...row});
+        }));
+    };
 
     return (
         <Fragment>
@@ -63,47 +92,22 @@ export default function FinancialTable() {
                 <Table className={classes.table} aria-label="goals table">
                     <TableHead>
                         <TableRow>
+                            <TableCell/>
                             <TableCell>Goal</TableCell>
-                            <TableCell align="right">Monthly Budget</TableCell>
-                            <TableCell align="right">Achieve in Years</TableCell>
+                            <TableCell align="left">Monthly Budget</TableCell>
+                            <TableCell align="left">Achieve in Years</TableCell>
                             <TableCell align="right">Zakat</TableCell>
                             <TableCell align="right">Total Budget</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {rows.map((row, index) => (
-                            <TableRow key={row.goal}>
-                                <TableCell component="th" scope="row">
-                                    {row.goal}
-                                </TableCell>
-                                <TableCell align="right">
-                                    <TextField type="number" placeholder="Monthly Budget" onChange={(e) => {
-                                        let changedIndex = index;
-                                        setRows(
-                                            rows.map((row, index) => {
-                                                if (index !== changedIndex) return row
-                                                return createData(row.goal, e.target.value || row.monthly_budget, row.in_years);
-                                            }));
-                                    }}/>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <TextField type="number" placeholder="Achieve in years" onChange={(e) => {
-                                        let changedIndex = index;
-                                        setRows(
-                                            rows.map((row, index) => {
-                                                if (index !== changedIndex) return row
-                                                return createData(row.goal, row.monthly_budget, e.target.value || row.in_years);
-                                            }));
-                                    }}/>
-                                </TableCell>
-                                <TableCell align="right">{row.zakat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
-                                <TableCell align="right">{row.total_budget.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
-                            </TableRow>
-                        ))}
+                        {rows.map((row, index) =>
+                            <FinancialTableRow key={index} row={row} index={index} onRowUpdate={onRowUpdate}/>
+                        )}
                     </TableBody>
                 </Table>
             </TableContainer>
-            <Dialog open={open} onClose={handleClose} aria-labelledby="add-goal">
+            <Dialog open={showAddDialog} onClose={handleClose} aria-labelledby="add-goal">
                 <DialogContent>
                     <TextField
                         autoFocus
@@ -111,6 +115,16 @@ export default function FinancialTable() {
                         label="Goal"
                         type="text"
                         fullWidth
+                    />
+                    <FormControlLabel
+                        control={
+                            <Checkbox
+                                id="hasRecurringExpenses"
+                                name="hasRecurringExpenses"
+                                color="primary"
+                            />
+                        }
+                        label="Has Recurring Expenses"
                     />
                 </DialogContent>
                 <DialogActions>
